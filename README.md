@@ -10,7 +10,7 @@ Currently, there are three versions:
 - `master` 
   - contains the published command, but with a change to turn of `mata strict`
 - `rank_maxiter` 
-  - checks that matrix used in optimization have rank 
+  - checks that matrix used in optimization has rank 
   - has an option for maximum iterations for the optimizer
 - `multicoll_and_endog_not_dummies` 
   - Adds an error message if multicollinearity stops the optimization
