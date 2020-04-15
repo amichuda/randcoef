@@ -1,11 +1,12 @@
 *********************************************************************************
-* 	randcoef                                                      			        *
-*	v 13.4  4march2017	by	Oscar Barriga Cabanillas	- obarriga@ucdavis.edu	*
+* 	randcoef                                                      			    *
+*	v 14.0  15April2020	by	Oscar Barriga Cabanillas	- obarriga@ucdavis.edu	*
 *							Aleks Michuda               - amichuda@ucdavis.edu	*
 *********************************************************************************
 
 *! Added error message if multicollinearity stops the optimization
 *! Added error message choice and endogenopus variables are not dummies
+*! Added  set matastrict off to avoid conflicts with recent Mata updates
 
 pause on
 cap program drop randcoef
@@ -919,12 +920,14 @@ mata:
 	mata set matalnum off
 	mata set mataoptimize on
 	mata set matafavor speed
+	mata set matastrict off
 
 
 
 // --- Program betamatfunc
 
 	function betamatfunc(j,rank) {
+		real matrix a
 		a= J(rank,1,0)	
 		a[j]=1
 		return(a)
