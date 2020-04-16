@@ -1,6 +1,7 @@
 
 * Tabula rasa
     cscript randcoef adofile randcoef
+    which randcoef
 
     webuse nlswork
 * Make sure it's a panel data set

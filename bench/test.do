@@ -16,7 +16,7 @@
 
 * Set this value to the user currently using this file
     global              	user "et"
-
+    di "$user"
 * Define root folder globals
     if "$user" == "et" {
         global          	repo "C:/Users/`c(username)'/Desktop/git/randcoef"
@@ -26,7 +26,9 @@
                             since Stata will look for .ado files
                             in local repo first
                             */
+    di "$repo"
     cd                      "$repo/bench"
+    pwd
 
 * dependencies
 	* for packages/commands, make a local containing any required packages
