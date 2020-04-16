@@ -920,7 +920,7 @@ mata:
 	mata set matalnum off
 	mata set mataoptimize on
 	mata set matafavor speed
-	mata set matastrict on 	/* Better for trouble-shooting */
+	mata set matastrict off 	/* Better for trouble-shooting */
 							/* Program runs fine as long as we declare a */
 
 
