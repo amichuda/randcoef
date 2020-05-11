@@ -900,7 +900,7 @@ matname V "`name_m'" , explicit
 
 ** loading things to be returned
 
-ereturn post b V
+ereturn post b V, esample(‘touse’)
 ereturn scalar N = `Nsu'
 ereturn matrix bsu = `bsu'
 ereturn matrix Sigmasu = `Sigmasu'
