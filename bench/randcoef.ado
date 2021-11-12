@@ -900,7 +900,7 @@ matname V "`name_m'" , explicit
 
 ** loading things to be returned
 
-ereturn post b V
+ereturn post b V, esample(`touse')
 ereturn scalar N = `Nsu'
 ereturn matrix bsu = `bsu'
 ereturn matrix Sigmasu = `Sigmasu'
@@ -909,6 +909,8 @@ ereturn matrix Vsu = `Vsu'
 ereturn scalar chi2 = `chi_value'
 ereturn scalar p_chi2 = `p_value_chi'
 
+ereturn local cmdline `"`0'"'
+ereturn local cmd "randcoef"
 ereturn display
 
 
