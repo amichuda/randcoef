@@ -31,7 +31,7 @@ version 13.0
 		[if]	 ,									///
 		CHOICE(varlist min = 2 max = 5)				///
 		[											///
-		CONTROLS(varlist min = 1)					///
+		CONTROLS(varlist min = 1 fv)					///
 		METhod(string)								///
 		MATrix(string)								///
 		SHOWREG										///		
@@ -122,6 +122,13 @@ loc regression_y = "`varlist'"
 
 * Will Differ from  CRC and CRE
 loc regression_x = ""
+
+* expand factor variables if needed
+local fvops = "`s(fvops)'" == "true" | _caller() >= 11
+if `fvops' {
+	fvexpand `controls'
+	local controls =  r(varlist)
+}
 
 
 *1) We need to create the interactions: They are NOT necessary for the CRE model
