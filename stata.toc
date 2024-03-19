@@ -1,0 +1,12 @@
+v 15.0
+d Materials by Aleksandr Michuda and Oscar Barriga Cabanillas
+d am2497@cornell.edu
+d Cornell University
+d
+d UC Davis
+d obcabanillas@ucdavis.edu
+d https://github.com/amichuda/randcoef
+
+d 'randcoef': A Stata command that operationalizes the correlated random coefficient model from Suri (2011)
+
+p randcoef
