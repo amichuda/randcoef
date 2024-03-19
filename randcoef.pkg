@@ -1,0 +1,9 @@
+v 5.0.0
+d 'RANDCOEF': a Stata command to estimate correlated random coefficient models as developed in Suri (2011)
+d 
+d 
+d Distribution-Date:   20240319
+d License: MIT
+d 
+F randcoef.ado
+F randcoef.sthlp
