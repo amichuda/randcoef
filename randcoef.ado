@@ -1,12 +1,15 @@
 *********************************************************************************
 * 	randcoef                                                      			    *
-*	v 14.0  15April2020	by	Oscar Barriga Cabanillas	- obarriga@ucdavis.edu	*
-*							Aleks Michuda               - amichuda@ucdavis.edu	*
+*	v 15.0  19March2024	by	Oscar Barriga Cabanillas	- obarriga@ucdavis.edu	*
+*							Aleks Michuda               - amichuda@cornell.edu	*
 *********************************************************************************
 
+*! Added `nopython' option to `tuples' command for compatibility
+*! max_iter version 
 *! Added error message if multicollinearity stops the optimization
 *! Added error message choice and endogenopus variables are not dummies
-*! Added  set matastrict off to avoid conflicts with recent Mata updates
+*! It adds a rank conditions to the MVE matrix. If it is very close to zero, the matrix is close to be non-invertible, and results might be weird
+*! It adds the option MAXiter to modify the number of iterations performed until the maximization process converges
 
 pause on
 cap program drop randcoef
@@ -34,9 +37,10 @@ version 13.0
 		CONTROLS(varlist min = 1)					///
 		METhod(string)								///
 		MATrix(string)								///
-		SHOWREG										///		
+		SHOWREG										///
 		ENDOgenous(varlist min = 2 max = 5)			///
 		WEIGHTing(string)                           ///
+		MAXiter(integer 16000)  ///
 		KEEP										///
 		]
 
@@ -45,13 +49,13 @@ version 13.0
 
 loc method = upper("`method'")
 loc weighting = upper("`weighting'")
-		
+
 if ("`method'" == "" | "`method'" == "CRE" | "`method'" == "CRC" )  {
 	if ("`method'" == "" | "`method'" == "CRE") {
 		loc meth = "default method: CRE"
-		
+
 		loc meth_safe = "CRE"   // To guarantee that this method is actually used
-	
+
 	}
 	if ("`method'" == "CRC") {
 		loc meth = "method: CRC"
@@ -63,25 +67,25 @@ else {
 	error
 }
 
-* 2) If method is not CRC, endogenous and weighting cannot be used		
+* 2) If method is not CRC, endogenous and weighting cannot be used
 
 if "`meth_safe'" == "CRE" {
 
 	if "`endogenous'" != "" {
 		di in red "Adding extra endogenous variables is only possible in the CRC model"
-		error	
+		error
 	}
-	
+
 	if "`weighting'" != "" {
 		di in red "Different Weighting Matrices are only possible in the CRC model"
 		error
 	}
-	
+
 }
 * 2.1) An error for not specifying the weighting matrices correctly
 
 if "`meth_safe'" == "CRC" {
-	
+
 	if ("`weighting'" == "EWMD" | "`weighting'" == "DWMD" ) {
 		noi di in yellow "{title: RUNNING MODEL WITH `weighting' WEIGHTING MATRIX}"
 	}
@@ -92,33 +96,31 @@ if "`meth_safe'" == "CRC" {
 		noi di in red "{title: WEIGHTING MATRIX NOT CORRECTLY SPECIFIED}"
 		error
 	}
-}	
+}
 
-* 3) Check that both the variables in the choice option are dummies 
+* 3) Check that both the variables in the choice option are dummies
 
 * 3.1) For the choice variables
 
 foreach var of varlist `choice' {
-	
+
 	* Get values. Note that missing values are not taken into account
 	qui: levelsof `var' , loc(levels)
-	
+
 	if wordcount("`levels'") != 2 {
 		noi di in red "The choice variable `var' is not a dummy variable. This is requiered construction"
 		error
 	}
-	
+
 }
 
-
-
-/* 	Organizes the equation to be estimated by SUREG, taking as inputs information on the 
+/* 	Organizes the equation to be estimated by SUREG, taking as inputs information on the
 	outcome, choice and control options, and from the endogenous option if necessary*/
 
 *0) Define locals that will contain info
 
 * Coming from the command: It is the same for CRC and CRE
-loc regression_y = "`varlist'"	
+loc regression_y = "`varlist'"
 
 * Will Differ from  CRC and CRE
 loc regression_x = ""
@@ -127,130 +129,130 @@ loc regression_x = ""
 *1) We need to create the interactions: They are NOT necessary for the CRE model
 
 if "`meth_safe'" == "CRE" {
-	
-	loc regression_x = "`choice' `controls'"	
+
+	loc regression_x = "`choice' `controls'"
 }
 if "`meth_safe'" == "CRC" {
 
 	* If not additional endogenous variables, the combination is simple
-			
+
 	* The number of combinations is 2^n - 1
 	loc number_choice = wordcount("`choice'")
 	loc number_interactions = (2^`number_choice')-1
-	
+
 	/* We proceed to create the variables in order. Tuples create them in the opposite
 	order we need to reorganize the choice local, that is we reorganize them */
 
 	loc choice_ordered = ""
-	
+
 	forvalues j = 1(1)`number_choice' {
-		
+
 		loc aux = word("`choice'" , `j')
 		loc choice_ordered = "`aux' `choice_ordered' "
 	}
-	
-	cap tuples `choice_ordered'
-	
+
+	cap tuples `choice_ordered', nopython
+
 	* In the case the command tuples is not installed an error message shows up
 	if _rc == 199 {
-	
+
 		noi di in red "Please install the command tuples by using SSC"
 		error
 	}
-	
-	
+
+
 	* Now ve create the variables
-	
+
 	forvalues j = 1(1)`number_interactions' {
-			
+
 		* if it is not a variable that results from an interaction, no action is needed
-		
+
 		if wordcount("`tuple`j''") == 1 {
-		
+
 			* The vector will be:
 			// independent variables
 			loc regression_x = "`regression_x' `tuple`j''"
-			
+
 		}
-	
+
 		if wordcount("`tuple`j''") != 1 {
-		
+
 			* replace spaces by * so the interaction can be created
 			*loc name_`j' = subinstr("`tuple`j''" , " " , "_", .)
 			loc name_`j' = `j'
 			*loc name_`j' = substr("`name_`j''",1,27)
-			
-			
+
+
 			loc tuple`j' = subinstr("`tuple`j''" , " " , "*", .)
-			
-			tempvar int_`name_`j'' 
+
+			tempvar int_`name_`j''
 			gen `int_`name_`j''' = `tuple`j''
-			
-			
+
+
 			* The vector will be:
 			// independent variables
 			loc regression_x = "`regression_x' `int_`name_`j'''"
-			
+
 			* if option keep is used, we make a variable and not a tempvar
 			if "`keep'" != "" {
-				
-				gen int_`name_`j'' = `int_`name_`j''' 
-			}		
+
+				gen int_`name_`j'' = `int_`name_`j'''
+			}
 		}
-	}	
-		
+	}
+
 	*** In the case endogenous variables were included, they must also be added to the independent
 	***	variables: Added to the local regression_x
-	
+
 	if "`endogenous'" != "" {
-			
+
 		/* The order must be
 		i)		Choices as in the regular CRC with their interactions
 		ii)		Endogenous
 		iii) 	Each Endogenous interacted with i)
 		*/
-		
+
 		// i) is already done local regression_x
-		
+
 		// I proceed to add ii)
 		loc regression_x_endo = "`regression_x' `endogenous'"
-		
+
 
 		// Now iii) that is a bit more difficult
-		
+
 		*  For each variable in the endogenous local, we interact it with each element already in regression_x
 		loc num = wordcount("`endogenous'")
 		forvalues j = 1(1)`num' {
-		
+
 			loc aux = word("`endogenous'" , `j')
-			
+
 			* Each var in regression_x
 			loc num2 = wordcount("`regression_x'")
 			forvalues q = 1(1)`num2' {
-				
+
 				loc aux2 = word("`regression_x'" , `q')
-				
+
 				tempvar int_endo`j'_choice`q'
 				gen `int_endo`j'_choice`q'' = `aux'*`aux2'
-				
+
 				loc regression_x_endo = "`regression_x_endo' `int_endo`j'_choice`q''"
-				
+
 				* if option keep is used, we make a variable and not a tempvar
 				if "`keep'" != "" {
-					
+
 					gen int_endo`j'_choice`q' = `int_endo`j'_choice`q''
-				}				
-				
+				}
+
 			}
 		}
-	
-	* local with all the interactions from steps i) ii ) iii)	
-	loc regression_x = "`regression_x_endo'"		
-		
+
+	* local with all the interactions from steps i) ii ) iii)
+	loc regression_x = "`regression_x_endo'"
+
 	}
 	* Leave the old local for hmean later
 	loc hmean_loc = "`regression_x'"
-	
+
 	* Add extra controls.
 	loc regression_x = "`regression_x' `controls'"
 
@@ -259,11 +261,11 @@ if "`meth_safe'" == "CRC" {
 
 *2) observations to be used are marked down
 
-tempvar touse		
+tempvar touse
 
 if  "`if'" == "" {
 
-	mark `touse' 
+	mark `touse'
 }
 else {
 
@@ -275,7 +277,7 @@ else {
 *** Restriction matrix CAN be provided in the CRE model, but the default is automatically created matrices
 
 if "`meth_safe'" == "CRE" {
-	
+
 	* If matrix not provided
 	if "`matrix'" == "" {
 		noi disp in red  _n "{title: Restriction matrix not defined; deriving it automatically}"
@@ -290,9 +292,9 @@ if "`meth_safe'" == "CRE" {
 *4) The number of Variables of interest
 
 /* In the CRE model, the number of coefficients that are taken from the regression,
-that is, structural parameters equals the number of years	
+that is, structural parameters equals the number of years
 Note that the regression_y is used to indicate the number of periods we are dealing with.
-It is important, especially in the CRC model, since it determines the number og structural 
+It is important, especially in the CRC model, since it determines the number og structural
 parameters
 */
 if "`meth_safe'" == "CRE" {
@@ -301,7 +303,7 @@ if "`meth_safe'" == "CRE" {
 }
 
 /* CRC model requires to subtract a subset of the independent variables from the regression_x.
-How many depends on the model that is been run. Specifically, the number of years (T) available 
+How many depends on the model that is been run. Specifically, the number of years (T) available
 in the panel, as well as the number of endogenous regressors. The local  intvar  indicates the number.
 Note that in the CRC, the number of structural parameters is more complex than in the CRE model, nut
 still is a function of wordcount("`regression_y'"), that is the  number of periods, as well as the
@@ -314,13 +316,13 @@ is no extra endogenous variable.
 loc endo_number = wordcount("`endogenous'")
 
 if "`meth_safe'" == "CRC" {
-	
+
 	** If no extra endogenous variable was used:
 	// CRC model uses (2^T)-1 to account for the interactions
 	if `endo_number' == 0  {
 		loc intvar = (2^wordcount("`regression_y'"))-1
 	}
-	
+
 	** When extra endogenous variables are included:
 	// CRC model uses [(2^T)-1]+[T*2^T] to account for the interactions
 	*NEEDS TO BE ADAPTED AS MORE YEARS ARE PROGRAMMED ********************************************************************************************!!!!!!
@@ -332,7 +334,7 @@ if "`meth_safe'" == "CRC" {
 	if inrange(`endo_number',0,3) != 1  {
 		di in red "go home"
 		error
-	}	
+	}
 	*NEEDS TO BE ADAPTED AS MORE YEARS ARE PROGRAMMED ********************************************************************************************!!!!!!
 */
 }
@@ -355,25 +357,25 @@ loc loop_count = wordcount("`regression_y'")
 
 forvalues j = 1(1)`loop_count' {
 
-	forvalues i = 1(1)`intvar' {	
+	forvalues i = 1(1)`intvar' {
 
 		local var = word("`regression_x'" , `i')
-						
+
 		local total_vars  = "`total_vars'  `var' "
-			
+
 		// 2) Gets information to display the exact model that is being estimated
-		label define var_loc `label_v' "`var'" , add modify 
+		label define var_loc `label_v' "`var'" , add modify
 
 		loc ++label_v
-		
+
 		scalar  `sc' =  `sc' + `"`crlf' `var'"'
-		///	
+		///
 	}
 }
-	
+
 * 6) Summarizes what is being estimated: Showreg determines if the user wants to see the regression outputs
 if "`showreg'" == "" {
-		
+
 	noi disp in red  _n "{title:Equations used in sureg:}" 	///
 	_column(1) in y "`regression_y' = `regression_x' " 		///
 	_n ""													///
@@ -381,25 +383,25 @@ if "`showreg'" == "" {
 	_column(1)  in y "  `meth'" 							///
 	_n ""													///
 	_n in red   "{title:The variables of interest are :}" 	///
-	_column(1)  in y "`regression_x'"						///		
-	
-	* Regression 
+	_column(1)  in y "`regression_x'"						///
+
+	* Regression
 	qui sureg (`regression_y' = `regression_x') if `touse'
-	
-}	
+
+}
 else {
 
 	noi disp in red  _n "{title:The variables of interest are :}" 	///
-	_column(1)  in y " `regression_x'"								///			
+	_column(1)  in y " `regression_x'"								///
 	_n in red  "{title:The model used is :}" 						///
 	_column(1)  in y "  `meth'" 									///
-	_n ""			
+	_n ""
 
-	* Regression 
-	sureg (`regression_y' = `regression_x') if `touse'	
+	* Regression
+	sureg (`regression_y' = `regression_x') if `touse'
 }
 
-* 6.1) Saving important results from Sureg 
+* 6.1) Saving important results from Sureg
 tempname bsu
 tempname Sigmasu
 tempname Vsu
@@ -421,7 +423,7 @@ mat `Vsu' = e(V)
 * 7.1)  identify elements in first equations
 loc count = wordcount("`regression_x'")
 
-* Loop that extracts the info from the matrices taking into account how many 
+* Loop that extracts the info from the matrices taking into account how many
 * equations are estimated in the sureg
 
 matrix `mat_aux' = e(b)
@@ -432,10 +434,10 @@ matrix `mat_aux10' = `mat_aux'[1,1..`intvar']
 loc count_reg = wordcount("`regression_y'")
 
 forvalues c = 2(1)`count_reg' {
-	
+
 	loc count2 = `count'+2
 	loc count3 = `count2'+`intvar'-1
-	
+
 	capture {
 		matrix `mat_aux10' = nullmat(`mat_aux10') , `mat_aux'[1,`count2'..`count3']
 	}
@@ -443,7 +445,7 @@ forvalues c = 2(1)`count_reg' {
 		di in red "There's a conformability error; did you add all the variables?"
 		exit 503
 	}
-	
+
 	// the plus 1 accounts for the presence of the constant, that is not counted in wordcount("`regression_x'")
 	loc count = `count' + wordcount("`regression_x'") + 1
 }
@@ -461,16 +463,16 @@ matrix `mat_var' = e(V)
 matrix `v_1' = `mat_var'[1..`intvar',1..`intvar']
 
 // Initiates the varcov matrix
-mat `varcov'  =  `v_1'  
+mat `varcov'  =  `v_1'
 
 
-forvalues c = 2(1)`count_reg' { 
-	
+forvalues c = 2(1)`count_reg' {
+
 	tempname v_`c'
-	
+
 	loc count2 = `count'+2
 	loc count3 = `count2'+`intvar'-1
-	
+
 	matrix `v_`c'' = `mat_var'[`count2'..`count3',`count2'..`count3']
 	// mat_capp only allows for adding one matrix at the time
 	mat_capp `varcov' : `varcov' `v_`c'' , miss(0)
@@ -480,10 +482,10 @@ forvalues c = 2(1)`count_reg' {
 *
 
 
-* 7.3) Clear the eclass memory to get rid of extra coefficients 
+* 7.3) Clear the eclass memory to get rid of extra coefficients
 
 ereturn clear
- 
+
 ******************************************************************************************************************************
 
 *************************************
@@ -497,65 +499,65 @@ tempname output2
 **********************************************
 * 8.1)  Implementation of the CRE model
 **********************************************
-	
+
 if "`meth_safe'" == "CRE" {
-	
+
 	**** If the restriction matrix was provided
 	if "`meth_type'" == "CREman" {
 
-		//------------------------	
-		*Third build the restriction matrix 
+		//------------------------
+		*Third build the restriction matrix
 		matrix `restrict' = `matrix'
 		//------------------------
-		
+
 		* getting matrices from Stata
-			
+
 		mata:	H = st_matrix("`restrict'")
-	
+
 	}
-	
+
 	**** If the restriction matrix is going to be estimated by the program
-	
+
 	if "`meth_type'" == "CREauto" {
-	
+
 		mata: HOld= I(`intvar')
 		mata: for (j=2; j<=`intvar'; j++) HOld = HOld\I(`intvar')
-		mata: betamat= betamatfunc(1,`intvar')						
+		mata: betamat= betamatfunc(1,`intvar')
 		mata: for (i= 2; i<=`intvar'; i++) betamat = betamat\betamatfunc(i, `intvar')
 		mata: H = betamat, HOld
-		
+
 		** get matrix to stata
-		
+
 		mata:  st_matrix( "`restrict'" ,H )
 	}
-	
+
 	//-------------------------------------------------------------
 
 	*8.1.2) Estimates the model using the matrix from either option above
 
 	mata:	p = st_matrix("`mat_aux10'")
 	mata:	varcov = st_matrix("`varcov'")
-	
+
 	mata:	V =  cholinv(varcov)
 	mata:	Vard = cholinv(H'*V*H)
 	mata:	d = Vard*H'*V*p
-		
+
 	mata:	st_matrix("Vard", Vard)
 	mata:	st_matrix("d", d)
-	
+
 	mata: 	se = diagonal(Vard):^0.5
 	mata: 	st_matrix("se", se)
 	mata: 	st_matrix("se", se)
-	
-	
+
+
 	mata:  st_matrix( "`d'" ,d )
 	mata:  st_matrix( "`V'" ,V )
-	
+
 	*8.1.3) Getting the chi test
-	
+
 	tempname dist_aux
-	mat `dist_aux' = (`mat_aux10'-`restrict'*`d')'*`V'*(`mat_aux10'-`restrict'*`d') 
-	
+	mat `dist_aux' = (`mat_aux10'-`restrict'*`d')'*`V'*(`mat_aux10'-`restrict'*`d')
+
 	* Get the chi2 value
 	loc dist = `Nsu'*`dist_aux'[1,1]
 
@@ -566,28 +568,28 @@ if "`meth_safe'" == "CRE" {
 	*8.1.4) Save for later display as tabdisp
 	mat `output1' = d
 	mat `output2' = se
-		
-	ereturn matrix coeff  = d 
+
+	ereturn matrix coeff  = d
 	ereturn matrix se = se
 	ereturn matrix varcov = Vard
 }
-	
+
 **********************************************
-* 8.2) Implementation of the CRC model if CRC is selected	
+* 8.2) Implementation of the CRC model if CRC is selected
 **********************************************
 
 if "`meth_safe'" == "CRC" {
 	// Transfer stata variables to Mata, and then get a vector of means from
 	// them.
-	
+
 	mata: st_view(hlist = . , . , "`hmean_loc'" , "`touse'")
 	mata: hmean = mean(hlist)
-	// Getting parameters and matrices from the results	
+	// Getting parameters and matrices from the results
 	mata:	param =  st_matrix("`mat_aux10'")
 
 	mata:	varcov = st_matrix("`varcov'")
-	
-	**** Determine the Weighting Matrix for CRC; default is the inverse 
+
+	**** Determine the Weighting Matrix for CRC; default is the inverse
 	**** of the reduced form variance-covariance matrix
 
 	if "`weighting'" == "" {
@@ -597,12 +599,12 @@ if "`meth_safe'" == "CRC" {
 	if "`weighting'" == "OMD" {
 		mata:	V =  cholinv(varcov)
 	}
-	
+
 	if "`weighting'" == "DWMD" {
 		mata:   V =  cholinv(varcov)
 		mata:   V =  diag(V)
 	}
-	
+
 	if "`weighting'" == "EWMD" {
 		local y_count = wordcount("`regression_y'")*`intvar'
 		mata:   V =  I(`y_count')
@@ -611,84 +613,84 @@ if "`meth_safe'" == "CRC" {
 
 	noi disp in red  _n "{title:Minimun Distance Estimator is being calculated}" 	///
 	_n ""																			///
-	
-	
-	//----- Defines the functions that need to be used depending on the 
+
+
+	//----- Defines the functions that need to be used depending on the
 	//------ number of years
-	
+
 	** Years programed so far
 	loc year_programmed = "2 , 3 , 4 , 5"
-	loc y_chosen = wordcount("`regression_y'") 
-	
+	loc y_chosen = wordcount("`regression_y'")
+
 	if inlist(wordcount("`regression_y'") ,`year_programmed' ) != 1 {
 		di in red "The optimization process for `y_chosen' years has not been programmed"
 		error
 
 	}
-	
+
 	if `endo_number' == 0 {
-	
-	
+
+
 		if `y_chosen' == 2 {
 			// number of colums
 			mata: n_col = 5
-		
+
 			** For the chi-square test
 			loc q_t = 6
-		
+
 		}
 		if `y_chosen' == 3 {
 			mata: n_col=9
-		
+
 			** For the chi-square test
-			loc q_t = 21		
+			loc q_t = 21
 		}
-		
+
 		if `y_chosen' == 4 {
 			mata: n_col=17
 			loc q_t = 60
 		}
-		
+
 		if `y_chosen' == 5 {
 			mata: n_col=33
 			loc q_t = 155
 		}
 	}
-	
+
 	if `endo_number' != 0 {
-	
+
 		if `y_chosen'== 2 {
 			//number of columns
 			mata: n_col = 14
-			
+
 			loc q_t = 22
 		}
-		
+
 		if `y_chosen' == 3 {
 			//number of columns
 			mata: n_col = 34
-			
+
 			loc q_t = 93
 		}
-		
+
 		if `y_chosen' == 4 {
 			mata: n_col=82
 			loc q_t = 316
 		}
-		
+
 		if `y_chosen' == 5 {
 			mata: n_col=194
 			loc q_t = 955
 		}
-			
+
 
 	}
-	
+
 	///----------------------------------------------------------------
-	
+
 	//---------------------------------------------------------------
-	//------- Starts optimization process 
-	
+	//------- Starts optimization process
+
 	/// -optimize()- requires that 'gtheta' is a rowvector
 
 	//Begins the optimization problem.
@@ -698,28 +700,31 @@ if "`meth_safe'" == "CRC" {
 	//the other optimize*() functions.
 
 	mata: S = optimize_init()
-	
+
+	/// Set maximum number of iterations
+	mata: optimize_init_conv_maxiter(S, `maxiter')
+
 	/// Depending on the options, a different mata function must be invoked.
-	
+
 	/// No additional endogenous variable
 
 
 	if `endo_number' == 0 {
-	
+
 		mata: optimize_init_evaluator(S,&myeval`y_chosen'())
-	
+
 	}
 
 
 	/// One additional endogenous variable: Fertilizer
 	if `endo_number' != 0 {
-	
+
 		mata: optimize_init_evaluator(S, &myeval`y_chosen'endo())
 
 	}
-	
+
 	mata: optimize_init_evaluatortype(S,"d0")
-	
+
 	/// intial parameters: Depends on the numer of restrictions
 
 	mata: theta_0 = J(1,n_col,1)
@@ -732,40 +737,42 @@ if "`meth_safe'" == "CRC" {
 	// Vector with the results from the maximization
 	capture noisily {
 		mata: thetahat = optimize(S)
+		mata: conv = optimize_result_converged(S)
+		mata: st_numscalar("converged"	, conv)
 	}
-	
+
 	if _rc==1400 {
-		di in red "It seems that the optimization crashed because there weren't" 
-		di in red "feasible values for optimization. Do you have multicollinear" 
+		di in red "It seems that the optimization crashed because there weren't"
+		di in red "feasible values for optimization. Do you have multicollinear"
 		di in red "variables? You can check if that is the case with the"
 		di in red "showreg option to see the sureg results"
 		exit 1400
 	}
 
 
-	
-	
+
+
 	//---------------------------------------------------------------
-	
-	
+
+
 	//---------------------------------------------------------------
 	//------- Starts process to get standard errors
-	
+
 	mata: D = deriv_init()
 	if `endo_number' == 0 {
 
 		//  function used
 		mata: mata: deriv_init_evaluator(D, &derivat33`y_chosen'())
 	}
-	
+
 	if `endo_number' != 0 {
 
 			mata: mata: deriv_init_evaluator(D, &derivat33`y_chosen'endo())
 
-	}	
-	
-	
-	
+	}
+
+
+
 	mata: deriv_init_evaluatortype(D, "t")
 
 	mata: deriv_init_params(D, thetahat)
@@ -774,62 +781,65 @@ if "`meth_safe'" == "CRC" {
 	//---------------------------------------------------------------
 
 	/*************************************************************************************/
-	/*  Calculate the Var-Cov matrix of the OMD Estimates                                */ 
+	/*  Calculate the Var-Cov matrix of the OMD Estimates                                */
 	/*  (use full sandwich formula to easily accommodate EWMD and DWMD weight matrices)  */
 	/*************************************************************************************/
-	
+
+	* Checks the rank condition in the
+	mata: rank_matrix = rank(grad'*(V)*grad)
+	mata: st_numscalar("rank_matrix", rank_matrix)
+
 	mata: omega = (invsym(grad'*(V)*grad))*(grad'*(V)*(varcov)*(V)*grad)*(invsym(grad'*(V)*grad))
 	*mata: omega = (cholinv(grad'*(V)*grad))*(grad'*(V)*(varcov)*(V)*grad)*(cholinv(grad'*(V)*grad))
-		
+
 	mata: se = diagonal(omega):^0.5
 	mata: results = (thetahat \  se')
-	
-	
+
+
 	mata: st_matrix("thetahat", thetahat)
 	mata: st_matrix("se", se)
 	mata: st_matrix("omega", omega)
 
-
-	
 	* Save for later display as tabdisp
 	mat `output1' = thetahat'
 	mat `output2' = se
-	
+
 	**************************************************************
-	*** Get chi2 
+	*** Get chi2
 	**************************************************************
 	if `endo_number' == 0 {
-	
-	
+
+
 		mata: gtheta=J(1,`q_t',.)
-		mata: derivat33`y_chosen'( thetahat, gtheta )	
-	
+		mata: derivat33`y_chosen'( thetahat, gtheta )
+
 	}
-	
+
 	if `endo_number' != 0 {
-		
+
 		mata: gtheta=J(1,`q_t',.)
 		mata: derivat33`y_chosen'endo( thetahat, gtheta )
 	}
-		
+
 	* for comformability of mat dist
-	
+
 	mata: gtheta_aux = gtheta'
-		
+
 	mata: dist = (param-gtheta_aux)'*V*(param-gtheta_aux)
 	mata: st_matrix("dist", dist)
-	
+
 	* Get the chi2 value
 	loc dist = `Nsu'*dist[1,1]
-	
+
 	mat drop dist
-	**************************************************************	
+	**************************************************************
 
 	ereturn matrix coeff  =  `output1'
 	ereturn matrix se = se
 	ereturn matrix varcov = omega
+	ereturn scalar rank_matrix = rank_matrix
 
-	//-------------------------------------------------------------	
+	//-------------------------------------------------------------
 
 }
 
@@ -840,11 +850,11 @@ tempvar n1
 tempvar parameters
 
 qui: svmat double  `output2' , names(`n1')
-qui: gen `parameters' = _n if `n1' != .
+qui: gen `parameters' = _n if !mi(`n1'1)
 
 * counting number of parameters
 
-qui: su  `parameters' 
+qui: su  `parameters'
 loc max = r(max)
 
 
@@ -861,7 +871,7 @@ if "`meth_safe'" == "CRE" {
 
 if "`meth_safe'" == "CRC" {
 	loc name_m = ""
-	
+
 	if `endo_number' == 0 {
 		forvalues i = 1(1)`=`max'-2' {
 			* names the lambdas
@@ -871,12 +881,12 @@ if "`meth_safe'" == "CRC" {
 		loc name_m = "`name_m' b phi"
 	}
 	if `endo_number' != 0 {
-	
+
 		forvalues i = 1(1)`=`max'-3' {
 			* names the lambdas
 			loc name_m = "`name_m' l`i'"
 		}
-		
+
 		* names the lambdas: rho b phi come at the end
 		loc name_m = "`name_m' rho b phi"
 	}
@@ -888,8 +898,8 @@ if "`meth_safe'" == "CRC" {
 loc p_value_chi = chi2tail(`=`q_t'-`max'' , `dist')
 loc chi_value = `dist'
 
-*************			
-noi disp in red  _n "{title: With corresponding Parameters matrix:}" 	
+*************
+noi disp in red  _n "{title: With corresponding Parameters matrix:}"
 
 
 matrix  b = e(coeff)'
@@ -902,45 +912,48 @@ matname V "`name_m'" , explicit
 
 ereturn post b V
 ereturn scalar N = `Nsu'
-ereturn matrix bsu = `bsu' 
+ereturn scalar rank_matrix = rank_matrix
+ereturn matrix bsu = `bsu'
 ereturn matrix Sigmasu = `Sigmasu'
 ereturn matrix Vsu = `Vsu'
+ereturn scalar converged = converged
 
 ereturn scalar chi2 = `chi_value'
 ereturn scalar p_chi2 = `p_value_chi'
 
-ereturn display 
-	
+ereturn local cmdline `"`0'"'
+ereturn local cmd "randcoef"
 
-end 
+ereturn display
+
+
+end
 
 // -------------------------------- Mata code ------------------------
 
-mata: 
+mata:
 	mata set matalnum off
 	mata set mataoptimize on
 	mata set matafavor speed
-	mata set matastrict off
 
 
 
 // --- Program betamatfunc
 
 	function betamatfunc(j,rank) {
-		real matrix a
-		a= J(rank,1,0)	
+		a= J(rank,1,0)
 		a[j]=1
 		return(a)
 	}
 
 
-		
+
 //---------------- Two Year ----------------------------------------------------
 
 // ------------------------ CRC ------------------------------------------------
-	
+
 	void myeval2(todo, theta , param , V,  omd , S , H) {
-		
+
 		real colvector  diff
 		external real rowvector hmean
 
@@ -948,25 +961,25 @@ mata:
 		beta=theta[4]
 		phi=theta[5]
 		lambda0= -theta[1..3]*hmean'
-		
+
 		gtheta[1] = theta[1]*(1+theta[5])+theta[4]+theta[5]*lambda0
 		gtheta[2] = theta[2]
 		gtheta[3] = theta[3]*(1+theta[5])+(theta[5]*theta[2])
 		gtheta[4] = theta[1]
 		gtheta[5] = theta[2]*(1+theta[5])+theta[4]+theta[5]*lambda0
 		gtheta[6] = theta[3]*(1+theta[5])+(theta[5]*theta[1])
-		
+
 		diff = param-gtheta'
-		
-		omd = (diff)'*V*(diff)		
+
+		omd = (diff)'*V*(diff)
 		test = omd
-	
+
 	}
-// Defines the function to take derivatives from for 2 year data. 
-	
-	
+// Defines the function to take derivatives from for 2 year data.
+
+
 	void derivat332( theta , gtheta ) {
-		
+
 		real colvector  diff
 		external real rowvector hmean
 
@@ -975,25 +988,25 @@ mata:
 		phi=theta[5]
 		lambda0= -theta[1..3]*hmean'
 		// (-hmean[1]*theta[1]-hmean[2]*theta[2]-hmean[3]*theta[3])
-		
+
 		gtheta[1] = theta[1]*(1+theta[5])+theta[4]+theta[5]*lambda0
 		gtheta[2] = theta[2]
 		gtheta[3] = theta[3]*(1+theta[5])+(theta[5]*theta[2])
 		gtheta[4] = theta[1]
 		gtheta[5] = theta[2]*(1+theta[5])+theta[4]+theta[5]*lambda0
 		gtheta[6] = theta[3]*(1+theta[5])+(theta[5]*theta[1])
-		
+
 	}
-	
+
 // ----------------------------- CRC Endogenous --------------------------------
 
 	void myeval2endo(todo, theta , param , V,  omd , S , H) {
-		
+
 		real colvector  diff
 		external real rowvector hmean
 
 		gtheta=J(1,22,1)
-		
+
 		rho= theta[12]
 		beta= theta[13]
 		phi= theta[14]
@@ -1021,23 +1034,23 @@ mata:
 		gtheta[20] = theta[9]
 		gtheta[21] = phi*theta[5] + theta[10]*(1 + phi)
 		gtheta[22] = phi*theta[9] + theta[11]*(1 + phi)
-		
+
 		diff = param-gtheta'
-		
-		omd = (diff)'*V*(diff)		
+
+		omd = (diff)'*V*(diff)
 		test = omd
-	
+
 	}
-// Defines the function to take derivatives from for 2 year data. 
-	
-	
+// Defines the function to take derivatives from for 2 year data.
+
+
 	void derivat332endo( theta , gtheta ) {
-		
+
 		real colvector  diff
 		external real rowvector hmean
 
 		gtheta=J(1,22,1)
-		
+
 		rho= theta[12]
 		beta= theta[13]
 		phi= theta[14]
@@ -1065,18 +1078,18 @@ mata:
 		gtheta[20] = theta[9]
 		gtheta[21] = phi*theta[5] + theta[10]*(1 + phi)
 		gtheta[22] = phi*theta[9] + theta[11]*(1 + phi)
-		
+
 	}
-	
-// ------------------------ End Two Year ---------------------------------------	
+
+// ------------------------ End Two Year ---------------------------------------
 
 
 // --------------------------- Three Year --------------------------------------
 
 // ----------------------------------- CRC -------------------------------------
-	
+
 	void myeval3(todo, theta , param , V,  omd , S , H)	{
-	
+
 		real colvector  diff
 
 		gtheta=J(1,21,1)
@@ -1105,21 +1118,21 @@ mata:
         gtheta[19] = theta[9]*theta[1]+theta[5]*(1+theta[9])
         gtheta[20] = theta[9]*theta[2]+theta[6]*(1+theta[9])
         gtheta[21] = theta[9]*theta[4]+theta[7]*(1+theta[9])
-		
+
 		diff = param-gtheta'
-		
-		omd= (diff)'*V*(diff)		
+
+		omd= (diff)'*V*(diff)
 	}
 
-	// Defines the function to take derivatives from with 3 year data. 
-	
+	// Defines the function to take derivatives from with 3 year data.
+
 	void derivat333( theta , gtheta )
 	{
 		gtheta = J(1,21,.)
 		external real rowvector hmean
 		lambda0= -theta[1..7]*hmean'
 		//lambda0= (-hmean[1]*theta[1]-hmean[2] *theta[2]-hmean[3]*theta[3]-hmean[4]*theta[4]-hmean[5]*theta[5]-hmean[6]*theta[6]-hmean[7]*theta[7])+theta[1]*(1+theta[9])
-		
+
 		gtheta[1]  = theta[8]+theta[9]*lambda0+(theta[1]*(1+theta[9]))
         gtheta[2]  = theta[2]
         gtheta[3]  = theta[3]
@@ -1140,12 +1153,12 @@ mata:
         gtheta[18] = theta[4]
         gtheta[19] = theta[9]*theta[1]+theta[5]*(1+theta[9])
         gtheta[20] = theta[9]*theta[2]+theta[6]*(1+theta[9])
-        gtheta[21] = theta[9]*theta[4]+theta[7]*(1+theta[9])		
+        gtheta[21] = theta[9]*theta[4]+theta[7]*(1+theta[9])
 	}
-	
-	
+
+
 // ---------------------------------------- CRC Endogenous ---------------------
-	
+
 	void myeval3endo(todo, theta , param , V,  omd , S , H)
 	{
 		real colvector  diff
@@ -1154,8 +1167,8 @@ mata:
 		external real rowvector hmean
 		lambda0= -theta[1..31]*hmean'
 		//lambda0= -hmean[1]*theta[1]-hmean[2]*theta[2]-hmean[3]*theta[3]-hmean[4]*theta[4]-hmean[5]*theta[5]-hmean[6]*theta[6]-hmean[7]*theta[7]-hmean[8]*theta[8]-hmean[9]*theta[9]-hmean[10]*theta[10]-hmean[11]*theta[11]-hmean[12]*theta[12]-hmean[13]*theta[13]-hmean[14]*theta[14]-hmean[15]*theta[15]-hmean[16]*theta[16]-hmean[17]*theta[17]-hmean[18]*theta[18]-hmean[19]*theta[19]-hmean[20]*theta[20]-hmean[21]*theta[21]-hmean[22]*theta[22]-hmean[23]*theta[23]-hmean[24]*theta[24]-hmean[25]*theta[25]-hmean[26]*theta[26]-hmean[27]*theta[27]-hmean[28]*theta[28]-hmean[29]*theta[29]-hmean[30]*theta[30]-hmean[31]*theta[31]
-		//theta[32]=rho, theta[33]=beta, theta[34]=phi 
-		
+		//theta[32]=rho, theta[33]=beta, theta[34]=phi
+
 		gtheta[1]  = theta[1]*(1 + theta[34]) + theta[33] + theta[34]*lambda0
 		gtheta[2]  = theta[2]
 		gtheta[3]  = theta[3]
@@ -1249,25 +1262,25 @@ mata:
 		gtheta[91] = theta[34]*theta[25] + theta[29]*(1 + theta[34])
 		gtheta[92] = theta[34]*theta[26] + theta[30]*(1 + theta[34])
 		gtheta[93] = theta[34]*theta[28] + theta[31]*(1 + theta[34])
-		
-		
+
+
 		diff = param-gtheta'
-		
-		omd= (diff)'*V*(diff)		
+
+		omd= (diff)'*V*(diff)
 	}
 
-	// Defines the function to take derivatives from with 3 year data. 
-	
+	// Defines the function to take derivatives from with 3 year data.
+
 	void derivat333endo( theta , gtheta )
 	{
 		gtheta = J(1,93,.)
 		external real rowvector hmean
-		
+
 		lambda0= -theta[1..31]*hmean'
 		//lambda0= -hmean[1]*theta[1]-hmean[2]*theta[2]-hmean[3]*theta[3]-hmean[4]*theta[4]-hmean[5]*theta[5]-hmean[6]*theta[6]-hmean[7]*theta[7]-hmean[8]*theta[8]-hmean[9]*theta[9]-hmean[10]*theta[10]-hmean[11]*theta[11]-hmean[12]*theta[12]-hmean[13]*theta[13]-hmean[14]*theta[14]-hmean[15]*theta[15]-hmean[16]*theta[16]-hmean[17]*theta[17]-hmean[18]*theta[18]-hmean[19]*theta[19]-hmean[20]*theta[20]-hmean[21]*theta[21]-hmean[22]*theta[22]-hmean[23]*theta[23]-hmean[24]*theta[24]-hmean[25]*theta[25]-hmean[26]*theta[26]-hmean[27]*theta[27]-hmean[28]*theta[28]-hmean[29]*theta[29]-hmean[30]*theta[30]-hmean[31]*theta[31]
 
-		// theta[32]=rho, theta[33]=beta, theta[34]=phi 
-		
+		// theta[32]=rho, theta[33]=beta, theta[34]=phi
+
 		gtheta[1]  = theta[1]*(1 + theta[34]) + theta[33] + theta[34]*lambda0
 		gtheta[2]  = theta[2]
 		gtheta[3]  = theta[3]
@@ -1360,10 +1373,10 @@ mata:
 		gtheta[90] = theta[28]
 		gtheta[91] = theta[34]*theta[25] + theta[29]*(1 + theta[34])
 		gtheta[92] = theta[34]*theta[26] + theta[30]*(1 + theta[34])
-		gtheta[93] = theta[34]*theta[28] + theta[31]*(1 + theta[34])	
+		gtheta[93] = theta[34]*theta[28] + theta[31]*(1 + theta[34])
 	}
-	
-	
+
+
 // ----------------------- End Three Year --------------------------------------
 
 // ---------------------------- Four Year --------------------------------------
@@ -1371,14 +1384,14 @@ mata:
 // -------------------------------- CRC ----------------------------------------
 
 	void myeval4(todo, theta , param , V,  omd , S , H) {
-		
+
 		real colvector  diff
 		external real rowvector hmean
 
 		gtheta=J(1,60,1)
 		lambda0= -theta[1..15]*hmean'
 
-		
+
 		beta=theta[16]
 		phi=theta[17]
 
@@ -1442,25 +1455,25 @@ mata:
 		gtheta[58]  = phi*theta[6] + theta[13]*(1 + phi)
 		gtheta[59]  = phi*theta[8] + theta[14]*(1 + phi)
 		gtheta[60]  = phi*theta[11] + theta[15]*(1 + phi)
-		
+
 		diff = param-gtheta'
-		
-		omd = (diff)'*V*(diff)		
+
+		omd = (diff)'*V*(diff)
 		test = omd
-	
+
 	}
-// Defines the function to take derivatives from for 2 year data. 
-	
-	
+// Defines the function to take derivatives from for 2 year data.
+
+
 	void derivat334( theta , gtheta ) {
-		
+
 		real colvector  diff
 		external real rowvector hmean
 
 		gtheta=J(1,60,1)
 		lambda0= -theta[1..15]*hmean'
 
-		
+
 		beta=theta[16]
 		phi=theta[17]
 
@@ -1524,14 +1537,14 @@ mata:
 		gtheta[58]  = phi*theta[6] + theta[13]*(1 + phi)
 		gtheta[59]  = phi*theta[8] + theta[14]*(1 + phi)
 		gtheta[60]  = phi*theta[11] + theta[15]*(1 + phi)
-		
+
 	}
-	
-	
+
+
 // --------------------------------- CRC ENDOGENOUS ----------------------------
 
 	void myeval4endo(todo, theta , param , V,  omd , S , H) {
-		
+
 		real colvector  diff
 		external real rowvector hmean
 
@@ -1541,7 +1554,7 @@ mata:
 		rho=theta[80]
 		beta=theta[81]
 		phi=theta[82]
-		
+
 		gtheta[1]   = theta[1]*(1 + phi) + beta + phi*lambda0
 		gtheta[2]   = theta[2]
 		gtheta[3]   = theta[3]
@@ -1858,18 +1871,18 @@ mata:
 		gtheta[314] = phi*theta[70] + theta[77]*(1 + phi)
 		gtheta[315] = phi*theta[72] + theta[78]*(1 + phi)
 		gtheta[316] = phi*theta[75] + theta[79]*(1 + phi)
-		
+
 		diff = param-gtheta'
-		
-		omd = (diff)'*V*(diff)		
+
+		omd = (diff)'*V*(diff)
 		test = omd
-	
+
 	}
-// Defines the function to take derivatives from for 2 year data. 
-	
-	
+// Defines the function to take derivatives from for 2 year data.
+
+
 	void derivat334endo( theta , gtheta ) {
-		
+
 		real colvector  diff
 		external real rowvector hmean
 
@@ -1879,7 +1892,7 @@ mata:
 		rho=theta[80]
 		beta=theta[81]
 		phi=theta[82]
-		
+
 		gtheta[1]   = theta[1]*(1 + phi) + beta + phi*lambda0
 		gtheta[2]   = theta[2]
 		gtheta[3]   = theta[3]
@@ -2196,7 +2209,7 @@ mata:
 		gtheta[314] = phi*theta[70] + theta[77]*(1 + phi)
 		gtheta[315] = phi*theta[72] + theta[78]*(1 + phi)
 		gtheta[316] = phi*theta[75] + theta[79]*(1 + phi)
-		
+
 	}
 
 
@@ -2207,7 +2220,7 @@ mata:
 // ---------------------------------- CRC --------------------------------------
 
 	void myeval5(todo, theta , param , V,  omd , S , H) {
-		
+
 		real colvector  diff
 		external real rowvector hmean
 
@@ -2215,8 +2228,8 @@ mata:
 		beta=theta[32]
 		phi=theta[33]
 		lambda0= -theta[1..31]*hmean'
-		
-		
+
+
 		gtheta[1] =theta[1]*(1 + phi) + beta + phi*lambda0
 		gtheta[2] =theta[2]
 		gtheta[3] =theta[3]
@@ -2372,18 +2385,18 @@ mata:
 		gtheta[153] =phi*theta[19] + theta[29]*(1 + phi)
 		gtheta[154] =phi*theta[22] + theta[30]*(1 + phi)
 		gtheta[155] =phi*theta[26] + theta[31]*(1 + phi)
-		
+
 		diff = param-gtheta'
-		
-		omd = (diff)'*V*(diff)		
+
+		omd = (diff)'*V*(diff)
 		test = omd
-	
+
 	}
-// Defines the function to take derivatives from for 2 year data. 
-	
-	
+// Defines the function to take derivatives from for 2 year data.
+
+
 	void derivat335( theta , gtheta ) {
-		
+
 		real colvector  diff
 		external real rowvector hmean
 
@@ -2391,8 +2404,8 @@ mata:
 		beta=theta[32]
 		phi=theta[33]
 		lambda0= -theta[1..31]*hmean'
-		
-		
+
+
 		gtheta[1] =theta[1]*(1 + phi) + beta + phi*lambda0
 		gtheta[2] =theta[2]
 		gtheta[3] =theta[3]
@@ -2548,15 +2561,15 @@ mata:
 		gtheta[153] =phi*theta[19] + theta[29]*(1 + phi)
 		gtheta[154] =phi*theta[22] + theta[30]*(1 + phi)
 		gtheta[155] =phi*theta[26] + theta[31]*(1 + phi)
-		
+
 	}
 
 
-	
+
 // ------------------------- CRC ENDOGENOUS ------------------------------------
 
 		void myeval5endo(todo, theta , param , V,  omd , S , H) {
-		
+
 		real colvector  diff
 		external real rowvector hmean
 
@@ -2566,8 +2579,8 @@ mata:
 		rho=theta[192]
 		beta=theta[193]
 		phi=theta[194]
-		
-		
+
+
 		gtheta[1] =theta[1]*(1 + phi) + beta + phi*lambda0
 		gtheta[2] =theta[2]
 		gtheta[3] =theta[3]
@@ -3523,28 +3536,28 @@ mata:
 		gtheta[953] =phi*theta[179] + theta[189]*(1 + phi)
 		gtheta[954] =phi*theta[182] + theta[190]*(1 + phi)
 		gtheta[955] =phi*theta[186] + theta[191]*(1 + phi)
-		
+
 		diff = param-gtheta'
-		
-		omd = (diff)'*V*(diff)		
+
+		omd = (diff)'*V*(diff)
 		test = omd
-	
+
 	}
-// Defines the function to take derivatives from for 2 year data. 
-	
-	
+// Defines the function to take derivatives from for 2 year data.
+
+
 	void derivat335endo( theta , gtheta ) {
-		
+
 		real colvector  diff
 		external real rowvector hmean
 
 		gtheta=J(1,955,1)
 		lambda0= -theta[1..191]*hmean'
-		
+
 		rho=theta[192]
 		beta=theta[193]
 		phi=theta[194]
-		
+
 		gtheta[1]   = theta[1]*(1 + phi) + beta + phi*lambda0
 		gtheta[2]   = theta[2]
 		gtheta[3]   = theta[3]
@@ -4500,18 +4513,15 @@ mata:
 		gtheta[953] = phi*theta[179] + theta[189]*(1 + phi)
 		gtheta[954] = phi*theta[182] + theta[190]*(1 + phi)
 		gtheta[955] = phi*theta[186] + theta[191]*(1 + phi)
-		
+
 	}
-	
+
 // --------------------------- END 5 YEAR --------------------------------------
-	
-//------------------------------------------------------------------------------------------------	
-	
+
+//------------------------------------------------------------------------------------------------
+
 
 end
 // ------------------------------------------------------------------
 
 exit
-
-	
-
