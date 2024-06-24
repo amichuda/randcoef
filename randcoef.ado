@@ -1,6 +1,6 @@
 *********************************************************************************
 * 	randcoef                                                      			    *
-*	v 15.0  19March2024	by	Oscar Barriga Cabanillas	- obarriga@ucdavis.edu	*
+*	v 5.0  19March2024	by	Oscar Barriga Cabanillas	- obarriga@ucdavis.edu	*
 *							Aleks Michuda               - amichuda@cornell.edu	*
 *********************************************************************************
 
