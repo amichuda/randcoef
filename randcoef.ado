@@ -4,7 +4,7 @@
 *							Aleks Michuda               - amichuda@cornell.edu	*
 *********************************************************************************
 
-*! v15.0 Added `nopython' option to `tuples' command for compatibility
+*! v5.0 Added `nopython' option to `tuples' command for compatibility
 *! max_iter version 
 *! Added error message if multicollinearity stops the optimization
 *! Added error message choice and endogenopus variables are not dummies
